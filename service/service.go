@@ -133,7 +133,7 @@ func Router(cfg *Config) *gin.Engine {
 
 		result, err := translate.TranslateByDLX(sourceLang, targetLang, translateText, tagHandling, proxyURL, "")
 		if err != nil {
-			log.Printf("Translation failed: %s", err)
+			log.Printf("Translation failed")
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    http.StatusInternalServerError,
 				"message": "Translation failed",
@@ -208,7 +208,7 @@ func Router(cfg *Config) *gin.Engine {
 
 		result, err := translate.TranslateByDLX(sourceLang, targetLang, translateText, tagHandling, proxyURL, dlSession)
 		if err != nil {
-			log.Printf("Translation failed: %s", err)
+			log.Printf("Translation failed")
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    http.StatusInternalServerError,
 				"message": "Translation failed",
@@ -265,7 +265,7 @@ func Router(cfg *Config) *gin.Engine {
 
 		result, err := translate.TranslateByDLX("", targetLang, translateText, "", proxyURL, "")
 		if err != nil {
-			log.Printf("Translation failed: %s", err)
+			log.Printf("Translation failed")
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    http.StatusInternalServerError,
 				"message": "Translation failed",

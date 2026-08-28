@@ -3,3 +3,11 @@ dlx
 
 # macOS Finder metadata
 .DS_Store
+
+# Local Docker/production secret material
+secrets/
+*.secret
+
+# Frontend build and dependency artifacts
+sponsor-web/node_modules/
+sponsor-web/dist/

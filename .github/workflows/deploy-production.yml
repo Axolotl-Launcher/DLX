@@ -1,0 +1,22 @@
+name: Deploy production
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Immutable Git commit SHA image tag to deploy
+        required: true
+        type: string
+permissions: { contents: read }
+jobs:
+  deploy:
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy approved image
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          script: /usr/local/bin/axolotl-deploy ${{ inputs.image_tag }}

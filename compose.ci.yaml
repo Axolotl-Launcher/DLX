@@ -1,0 +1,10 @@
+services:
+  dlx:
+    image: ghcr.io/axolotl-launcher/dlx:${IMAGE_TAG:-main}
+    build: null
+  sponsor-gateway:
+    image: ghcr.io/axolotl-launcher/sponsor-gateway:${IMAGE_TAG:-main}
+    build: null
+  sponsor-web:
+    image: ghcr.io/axolotl-launcher/sponsor-web:${IMAGE_TAG:-main}
+    build: null

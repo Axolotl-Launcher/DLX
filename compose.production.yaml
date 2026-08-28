@@ -1,0 +1,70 @@
+services:
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      sponsor-gateway: { condition: service_healthy }
+      sponsor-web: { condition: service_healthy }
+  sponsor-web:
+    build: { context: ., dockerfile: sponsor-web/Dockerfile }
+    restart: unless-stopped
+    expose: ["80"]
+    healthcheck: { test: ["CMD", "caddy", "version"], interval: 30s, timeout: 3s, retries: 3 }
+  sponsor-gateway:
+    build: { context: ., dockerfile: sponsor-gateway/Dockerfile }
+    restart: unless-stopped
+    environment:
+      GATEWAY_ADDR: ":8080"
+      DLX_INTERNAL_URL: http://dlx:1188
+      DLX_INTERNAL_TOKEN_FILE: /run/secrets/dlx_internal_token
+      API_KEY_PEPPER_FILE: /run/secrets/api_key_pepper
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      SESSION_COOKIE_DOMAIN: .axlmc.org
+      AFDIAN_USER_ID_FILE: /run/secrets/afdian_user_id
+      AFDIAN_TOKEN_FILE: /run/secrets/afdian_token
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_ADDR: redis:6379
+    secrets: [dlx_internal_token, api_key_pepper, session_secret, afdian_user_id, afdian_token, database_url]
+    expose: ["8080"]
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/readyz"], interval: 30s, timeout: 3s, retries: 3 }
+    depends_on:
+      dlx: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+  dlx:
+    build: { context: ., dockerfile: Dockerfile }
+    restart: unless-stopped
+    expose: ["1188"]
+    environment: ["TOKEN_FILE=/run/secrets/dlx_internal_token"]
+    secrets: [dlx_internal_token]
+    healthcheck: { test: ["CMD-SHELL", "wget -q -O- http://localhost:1188/ || exit 1"], interval: 30s, timeout: 5s, retries: 3 }
+  postgres:
+    image: postgres:16.4
+    restart: unless-stopped
+    expose: ["5432"]
+    environment: ["POSTGRES_DB=sponsor", "POSTGRES_USER=sponsor", "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password"]
+    secrets: [postgres_password]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U sponsor -d sponsor"], interval: 10s, timeout: 5s, retries: 5 }
+  redis:
+    image: redis:7.4.1-alpine
+    restart: unless-stopped
+    expose: ["6379"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 5 }
+volumes:
+  caddy-data: {}
+  caddy-config: {}
+  postgres-data: {}
+secrets:
+  dlx_internal_token: { file: ./secrets/dlx_internal_token }
+  postgres_password: { file: ./secrets/postgres_password }
+  api_key_pepper: { file: ./secrets/api_key_pepper }
+  session_secret: { file: ./secrets/session_secret }
+  afdian_user_id: { file: ./secrets/afdian_user_id }
+  afdian_token: { file: ./secrets/afdian_token }
+  database_url: { file: ./secrets/database_url }

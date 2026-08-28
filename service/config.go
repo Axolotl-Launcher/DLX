@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -59,6 +60,15 @@ func InitConfig() *Config {
 	if cfg.Token == "" {
 		if token, ok := os.LookupEnv("TOKEN"); ok {
 			cfg.Token = token
+		}
+	}
+	// Docker and secret managers commonly mount secrets as files. Prefer TOKEN,
+	// but allow TOKEN_FILE without exposing its contents in process arguments/logs.
+	if cfg.Token == "" {
+		if path := os.Getenv("TOKEN_FILE"); path != "" {
+			if value, err := os.ReadFile(path); err == nil {
+				cfg.Token = strings.TrimSpace(string(value))
+			}
 		}
 	}
 

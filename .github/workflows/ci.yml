@@ -1,0 +1,21 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.25.0" }
+      - run: go test ./... && go vet ./...
+      - uses: pnpm/action-setup@v4
+        with: { version: "10.28.1" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: "pnpm", cache-dependency-path: sponsor-web/pnpm-lock.yaml }
+      - working-directory: sponsor-web
+        run: pnpm install --frozen-lockfile && pnpm run lint && pnpm run typecheck && pnpm run build

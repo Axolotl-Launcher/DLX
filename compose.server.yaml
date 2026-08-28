@@ -1,0 +1,7 @@
+services:
+  sponsor-gateway:
+    ports:
+      - "127.0.0.1:8080:8080"
+  sponsor-web:
+    ports:
+      - "127.0.0.1:8081:80"
