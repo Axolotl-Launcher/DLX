@@ -1,0 +1,6 @@
+.git
+.github
+secrets
+*.secret
+sponsor-web/node_modules
+sponsor-web/dist
