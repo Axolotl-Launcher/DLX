@@ -35,10 +35,3 @@ jobs:
           tags: |
             ghcr.io/${{ env.GHCR_OWNER }}/${{ matrix.image }}:${{ github.sha }}
             ghcr.io/${{ env.GHCR_OWNER }}/${{ matrix.image }}:main
-      # The repository is public and final images contain no secrets. Public
-      # visibility lets the production host pull immutable releases without
-      # storing a long-lived GitHub package token.
-      - name: Make published package public
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api --method PATCH "/orgs/${GHCR_OWNER}/packages/container/${{ matrix.image }}" -f visibility=public
