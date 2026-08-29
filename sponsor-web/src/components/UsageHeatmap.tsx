@@ -1,18 +1,55 @@
-import { BarChart3 } from "lucide-react"
+import { BarChart3, CircleHelp } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useUsage } from "@/hooks/useUsage"
 
 const DEEPL_RATE = 25
-const WEEKDAYS = ["周日", "", "周二", "", "周四", "", "周六"]
-function formatChars(value:number){return value>=1000000?(value/1000000).toFixed(2)+"M":value>=1000?(value/1000).toFixed(1)+"K":String(value)}
-function levelFor(chars:number){if(!chars)return 0;if(chars>12000)return 4;if(chars>9000)return 3;if(chars>6000)return 2;return 1}
-function dateValue(date:string){return new Date(date+"T00:00:00")}
-export function UsageHeatmap(){
- const{data,loading}=useUsage()
- if(loading)return <Card><CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="size-5"/>用量</CardTitle></CardHeader><CardContent><div className="h-36 animate-pulse rounded-xl bg-muted"/></CardContent></Card>
- if(!data)return null
- const first=dateValue(data.days[0]?.date??new Date().toISOString().slice(0,10));const start=new Date(first);start.setDate(first.getDate()-first.getDay())
- const cells=Array.from({length:13*7},(_,index)=>{const date=new Date(start);date.setDate(start.getDate()+index);const key=date.toISOString().slice(0,10);const day=data.days.find(item=>item.date===key);return{date,day,level:levelFor(day?.input_chars??0)}})
- const weeks=Array.from({length:13},(_,index)=>cells.slice(index*7,index*7+7));const equivalent=data.total_input_chars/1000000*DEEPL_RATE
- return <Card className="animate-fade-in"><CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="size-5"/>用量</CardTitle></CardHeader><CardContent className="grid gap-5"><div className="grid grid-cols-2 gap-4 sm:grid-cols-4"><div><p className="text-2xl font-semibold tracking-tight">{formatChars(data.total_input_chars)}</p><p className="mt-1 text-xs text-muted-foreground">字符 / 近 12 周</p></div><div><p className="text-2xl font-semibold tracking-tight">{data.total_request_count.toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">请求次数</p></div><div><p className="text-2xl font-semibold tracking-tight">${equivalent.toFixed(2)}</p><p className="mt-1 text-xs text-muted-foreground">DeepL 等效价</p></div><div><p className="text-2xl font-semibold tracking-tight">{data.total_error_count}</p><p className="mt-1 text-xs text-muted-foreground">错误次数</p></div></div><div className="overflow-x-auto pb-1"><div className="grid min-w-[620px] grid-cols-[34px_1fr] gap-x-2"><div/><div className="grid grid-cols-[repeat(13,minmax(0,1fr))] gap-1 text-[10px] text-muted-foreground">{weeks.map((week,index)=>{const month=week.find(cell=>cell.date.getDate()<=7);return <span key={index} className="truncate">{month?month.date.toLocaleString("zh-CN",{month:"short"}):""}</span>})}</div><div className="grid grid-rows-7 gap-1 text-[10px] text-muted-foreground">{WEEKDAYS.map((label,index)=><span key={index} className="flex h-3 items-center">{label}</span>)}</div><div className="grid grid-flow-col grid-rows-7 grid-cols-[repeat(13,minmax(0,1fr))] gap-1 rounded-lg border bg-muted/20 p-3">{cells.map(cell=><span key={cell.date.toISOString()} title={cell.day?cell.day.date+" · "+formatChars(cell.day.input_chars)+" 字符 · "+cell.day.request_count+" 次请求":cell.date.toISOString().slice(0,10)+" · 暂无用量"} className={"size-3 rounded-[3px] bg-heat-"+cell.level+" transition-transform duration-150 hover:scale-125"} aria-label={cell.day?cell.day.date+" "+cell.day.input_chars+" 字符":"暂无用量"}/>)}</div></div></div><div className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">少 <span className="mx-1 inline-flex gap-1">{[0,1,2,3,4].map(level=><i key={level} className={"size-3 rounded-[3px] bg-heat-"+level}/>)}</span>多</div></CardContent></Card>
+const LEVELS = ["var(--heat-0)", "var(--heat-1)", "var(--heat-2)", "var(--heat-3)", "var(--heat-4)"]
+const ROWS = [
+  { key: "request_count", label: "请求" },
+  { key: "input_chars", label: "字符" },
+  { key: "error_count", label: "错误" },
+] as const
+function compact(value: number) { return value >= 1000000 ? (value / 1000000).toFixed(1) + "M" : value >= 1000 ? (value / 1000).toFixed(1) + "K" : String(value) }
+function intensity(value: number, max: number) { if (!value || !max) return 0; const ratio = value / max; return ratio > .8 ? 4 : ratio > .6 ? 3 : ratio > .35 ? 2 : ratio > .12 ? 1 : 0 }
+function label(date: string) { return new Date(date + "T00:00:00").toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) }
+
+export function UsageHeatmap() {
+  const { data, loading } = useUsage()
+  if (loading) return <Card><CardContent className="p-6"><div className="h-52 animate-pulse rounded-xl bg-muted" /></CardContent></Card>
+  if (!data) return null
+  const days = data.days.slice(-12)
+  const maxes = ROWS.map(row => Math.max(...days.map(day => day[row.key])))
+  const equivalent = data.total_input_chars / 1000000 * DEEPL_RATE
+  return <Card className="overflow-hidden border-border/70 shadow-none">
+    <CardHeader className="gap-1 border-b bg-muted/15 px-5 py-4 sm:px-6">
+      <div className="flex items-center justify-between gap-3">
+        <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="size-4 text-muted-foreground" />用量概览</CardTitle>
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><CircleHelp className="size-3.5" />每日聚合</span>
+      </div>
+      <p className="text-xs text-muted-foreground">最近 12 天的翻译活动</p>
+    </CardHeader>
+    <CardContent className="grid gap-6 p-5 sm:p-6">
+      <div className="grid grid-cols-3 divide-x rounded-xl border bg-background">
+        <div className="p-3 sm:p-4"><p className="text-xl font-semibold tracking-tight sm:text-2xl">{compact(data.total_input_chars)}</p><p className="mt-1 text-[11px] text-muted-foreground">字符</p></div>
+        <div className="p-3 sm:p-4"><p className="text-xl font-semibold tracking-tight sm:text-2xl">{data.total_request_count.toLocaleString()}</p><p className="mt-1 text-[11px] text-muted-foreground">请求</p></div>
+        <div className="p-3 sm:p-4"><p className="text-xl font-semibold tracking-tight sm:text-2xl">{"$" + equivalent.toFixed(2)}</p><p className="mt-1 text-[11px] text-muted-foreground">等效价值</p></div>
+      </div>
+      <div className="overflow-x-auto pb-1">
+        <div className="min-w-[680px]">
+          <div className="mb-2 grid grid-cols-[44px_repeat(12,minmax(42px,1fr))] gap-1.5">
+            <span />{days.map(day => <span key={day.date} className="text-center text-[10px] tabular-nums text-muted-foreground">{label(day.date)}</span>)}
+          </div>
+          <div className="grid gap-1.5">
+            {ROWS.map((row, rowIndex) => <div key={row.key} className="grid grid-cols-[44px_repeat(12,minmax(42px,1fr))] items-center gap-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground">{row.label}</span>
+              {days.map(day => { const value = day[row.key]; const level = intensity(value, maxes[rowIndex]); return <div key={day.date} className="group relative h-11 rounded-md transition-transform duration-150 hover:z-10 hover:scale-[1.04]" style={{ backgroundColor: LEVELS[level] }} title={day.date + " · " + row.label + " · " + value.toLocaleString()}><span className="pointer-events-none absolute inset-x-0 -bottom-7 z-20 hidden whitespace-nowrap rounded bg-foreground px-2 py-1 text-center text-[10px] text-background shadow-sm group-hover:block">{value.toLocaleString()}</span></div> })}
+            </div>)}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between border-t pt-4 text-[11px] text-muted-foreground">
+        <span>低使用量</span><span className="inline-flex items-center gap-1.5">{LEVELS.map((color, index) => <i key={index} className="size-3 rounded-[3px]" style={{ backgroundColor: color }} />)}</span><span>高使用量</span>
+      </div>
+    </CardContent>
+  </Card>
 }
