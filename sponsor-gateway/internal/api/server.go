@@ -133,7 +133,7 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet { writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", ""); return }
 	userID, ok := s.sessionUser(r); if !ok { writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "login required", ""); return }
 	reader, ok := s.Store.(UsageReader); if !ok { writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", ""); return }
-	result, err := reader.UsageSummary(userID, time.Now().UTC().AddDate(0, 0, -83)); if err != nil { writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", ""); return }
+	result, err := reader.UsageSummary(userID, time.Now().UTC().AddDate(0, 0, -364)); if err != nil { writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", ""); return }
 	writeJSON(w, http.StatusOK, result)
 }
 

@@ -56,7 +56,7 @@ func (s *Postgres) TouchKey(id string, at time.Time) error {
 func (s *Postgres) UsageSummary(userID string, since time.Time) (api.UsageSummary, error) {
 	ctx, cancel := s.context(); defer cancel()
 	rows, err := s.db.QueryContext(ctx, `SELECT d::date, COALESCE(u.request_count,0), COALESCE(u.input_chars,0), COALESCE(u.error_count,0) FROM generate_series($2::date, CURRENT_DATE, interval '1 day') d LEFT JOIN usage_daily u ON u.user_id=$1::uuid AND u.date=d::date ORDER BY d`, userID, since.UTC().Format("2006-01-02")); if err != nil { return api.UsageSummary{}, err }; defer rows.Close()
-	result:=api.UsageSummary{Days:make([]api.UsageDay,0,84)}
+	result:=api.UsageSummary{Days:make([]api.UsageDay,0,365)}
 	for rows.Next(){var day api.UsageDay;var date time.Time;if err:=rows.Scan(&date,&day.RequestCount,&day.InputChars,&day.ErrorCount);err!=nil{return api.UsageSummary{},err};day.Date=date.Format("2006-01-02");result.Days=append(result.Days,day);result.TotalRequestCount+=day.RequestCount;result.TotalInputChars+=day.InputChars;result.TotalErrorCount+=day.ErrorCount}
 	return result, rows.Err()
 }
