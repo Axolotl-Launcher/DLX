@@ -25,11 +25,11 @@ export function UsageHeatmap() {
       <span className="text-xs text-muted-foreground">最近 12 周</span>
     </CardHeader>
     <CardContent className="px-4 pb-5 sm:px-6 sm:pb-6">
-      <div className="overflow-x-auto pb-2"><div className="grid min-w-[700px] grid-cols-[32px_1fr] gap-x-2">
+      <div className="overflow-x-auto pb-2"><div className="grid min-w-[250px] grid-cols-[32px_auto] justify-start gap-x-2">
         <div />
-        <div className="grid grid-cols-[repeat(13,minmax(0,1fr))] gap-1 text-[10px] text-muted-foreground">{weeks.map((week, index) => { const month = week.find(cell => cell.date.getDate() <= 7); return <span key={index}>{month ? month.date.toLocaleString("zh-CN", { month: "short" }) : ""}</span> })}</div>
+        <div className="grid grid-cols-[repeat(13,12px)] gap-1 text-[10px] text-muted-foreground">{weeks.map((week, index) => { const month = week.find(cell => cell.date.getDate() <= 7); return <span key={index}>{month ? month.date.toLocaleString("zh-CN", { month: "short" }) : ""}</span> })}</div>
         <div className="grid grid-rows-7 gap-1 text-[10px] leading-3 text-muted-foreground">{WEEKDAYS.map((name, index) => <span key={index} className="h-3">{name}</span>)}</div>
-        <div className="grid grid-flow-col grid-rows-7 gap-1">{cells.map(cell => { const chars = cell.item?.input_chars ?? 0; const requests = cell.item?.request_count ?? 0; const text = cell.key + " · " + compact(chars) + " 字符 · " + requests + " 次请求"; return <span key={cell.key} className="size-3 rounded-[3px] ring-1 ring-inset ring-black/[.04] transition-transform hover:z-10 hover:scale-125 dark:ring-white/[.06]" style={{ backgroundColor: HEAT[intensity(chars, max)] }} title={text} aria-label={text} /> })}</div>
+        <div className="grid grid-flow-col grid-cols-[repeat(13,12px)] grid-rows-7 gap-1">{cells.map(cell => { const chars = cell.item?.input_chars ?? 0; const requests = cell.item?.request_count ?? 0; const text = cell.key + " · " + compact(chars) + " 字符 · " + requests + " 次请求"; return <span key={cell.key} className="size-3 rounded-[3px] ring-1 ring-inset ring-black/[.04] transition-transform hover:z-10 hover:scale-125 dark:ring-white/[.06]" style={{ backgroundColor: HEAT[intensity(chars, max)] }} title={text} aria-label={text} /> })}</div>
       </div></div>
       <div className="mt-3 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">少 <span className="inline-flex gap-1">{HEAT.map((color, index) => <i key={index} className="size-3 rounded-[3px] ring-1 ring-inset ring-black/[.04] dark:ring-white/[.06]" style={{ backgroundColor: color }} />)}</span> 多</div>
     </CardContent>
