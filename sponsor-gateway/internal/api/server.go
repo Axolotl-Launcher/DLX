@@ -26,8 +26,13 @@ type Store interface {
 	UserStatus(userID string) (paidFen int64, status string, ok bool)
 	TouchKey(id string, at time.Time) error
 }
+type UsageDay struct { Date string `json:"date"`; RequestCount int64 `json:"request_count"`; InputChars int64 `json:"input_chars"`; ErrorCount int64 `json:"error_count"` }
+type UsageSummary struct { Days []UsageDay `json:"days"`; TotalRequestCount int64 `json:"total_request_count"`; TotalInputChars int64 `json:"total_input_chars"`; TotalErrorCount int64 `json:"total_error_count"` }
 type UsageRecorder interface {
 	RecordUsage(userID string, inputChars int, errorOccurred bool, at time.Time) error
+}
+type UsageReader interface {
+	UsageSummary(userID string, since time.Time) (UsageSummary, error)
 }
 type RecoveryUserFinder interface {
 	FindUserByRecoveryHash(ctx context.Context, recoveryHash string) (string, bool)
@@ -72,6 +77,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/afdian/claim", s.claimOrder)
 	mux.HandleFunc("/me/api-key", s.apiKey)
 	mux.HandleFunc("/me", s.me)
+	mux.HandleFunc("/me/usage", s.usage)
 	mux.HandleFunc("/v1/translate", s.handleTranslate)
 	mux.HandleFunc("/v1/account", s.account)
 	return sponsorCORS(mux)
@@ -121,6 +127,14 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"lifetime_paid_fen": paid, "entitlement_status": status, "threshold_fen": s.threshold()})
+}
+
+func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet { writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", ""); return }
+	userID, ok := s.sessionUser(r); if !ok { writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "login required", ""); return }
+	reader, ok := s.Store.(UsageReader); if !ok { writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", ""); return }
+	result, err := reader.UsageSummary(userID, time.Now().UTC().AddDate(0, 0, -83)); if err != nil { writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", ""); return }
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) apiKey(w http.ResponseWriter, r *http.Request) {
