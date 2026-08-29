@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { api, errorMessage } from "@/lib/api"
@@ -7,6 +7,12 @@ export function useApiKey() {
   const [generating, setGenerating] = useState(false)
   const [revoking, setRevoking] = useState(false)
   const [pendingKey, setPendingKey] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    try { setPendingKey((await api.getApiKey()).api_key) } catch { setPendingKey(null) }
+  }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
 
   const generate = useCallback(async (): Promise<boolean> => {
     setGenerating(true)

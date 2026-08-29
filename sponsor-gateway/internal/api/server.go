@@ -41,8 +41,11 @@ type ClaimCreator interface {
 	CreateVerifiedClaim(ctx context.Context, userID string, recoveryHash string, order afdian.VerifiedOrder, thresholdFen int64) error
 }
 type KeyManager interface {
-	RotateKey(ctx context.Context, userID, id, prefix, hash string) error
+	RotateKey(ctx context.Context, userID, id, prefix, hash, ciphertext string) error
 	RevokeKey(ctx context.Context, userID string) error
+}
+type KeyViewer interface {
+	ActiveKeyCiphertext(ctx context.Context, userID string) (string, bool, error)
 }
 type Server struct {
 	Store         Store
@@ -149,6 +152,15 @@ func (s *Server) apiKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		viewer, ok := s.Store.(KeyViewer)
+		if !ok { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
+		ciphertext, found, err := viewer.ActiveKeyCiphertext(r.Context(), userID)
+		if err != nil { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
+		if !found { writeError(w, 404, "KEY_NOT_FOUND", "no active API key", ""); return }
+		key, err := s.Hasher.Open(ciphertext)
+		if err != nil { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
+		writeJSON(w, http.StatusOK, map[string]string{"api_key": key, "message": "active"})
 	case http.MethodPost:
 		id, err := auth.NewID()
 		if err != nil {
@@ -160,11 +172,13 @@ func (s *Server) apiKey(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", "")
 			return
 		}
-		if err = manager.RotateKey(r.Context(), userID, id, "axl_live_"+id, digest); err != nil {
+		ciphertext, err := s.Hasher.Seal(key)
+		if err != nil { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
+		if err = manager.RotateKey(r.Context(), userID, id, "axl_live_"+id, digest, ciphertext); err != nil {
 			writeError(w, 403, "SPONSORSHIP_REQUIRED", "permanent sponsorship is required", "")
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]string{"api_key": key, "message": "Copy and store this API Key now; it will not be shown again."})
+		writeJSON(w, http.StatusCreated, map[string]string{"api_key": key, "message": "API Key created. You can manage and copy it any time from the sponsor center."})
 	case http.MethodDelete:
 		if err := manager.RevokeKey(r.Context(), userID); err != nil {
 			writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", "")

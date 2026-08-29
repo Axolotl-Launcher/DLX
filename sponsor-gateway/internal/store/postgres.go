@@ -44,6 +44,15 @@ func (s *Postgres) UserStatus(userID string) (int64, string, bool) {
 	}
 	return paid, status, true
 }
+func (s *Postgres) ActiveKeyCiphertext(ctx context.Context, userID string) (string, bool, error) {
+	var ciphertext sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT secret_ciphertext FROM api_keys WHERE user_id=$1::uuid AND status='active'`, userID).Scan(&ciphertext)
+	if err == sql.ErrNoRows { return "", false, nil }
+	if err != nil { return "", false, err }
+	if !ciphertext.Valid || ciphertext.String == "" { return "", false, nil }
+	return ciphertext.String, true, nil
+}
+
 func (s *Postgres) TouchKey(id string, at time.Time) error {
 	ctx, cancel := s.context()
 	defer cancel()
@@ -143,6 +152,7 @@ type NewAPIKey struct {
 	ID         string
 	Prefix     string
 	SecretHash string
+	Ciphertext string
 }
 
 // RotateAPIKey enforces both permanent entitlement and the first-version
@@ -163,7 +173,7 @@ func (s *Postgres) RotateAPIKey(ctx context.Context, userID string, key NewAPIKe
 	if _, err = tx.ExecContext(ctx, "UPDATE api_keys SET status='revoked' WHERE user_id=$1::uuid AND status='active'", userID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO api_keys(id,user_id,prefix,secret_hash,status) VALUES($1::uuid,$2::uuid,$3,$4,'active')", key.ID, userID, key.Prefix, key.SecretHash); err != nil {
+	if _, err = tx.ExecContext(ctx, "INSERT INTO api_keys(id,user_id,prefix,secret_hash,secret_ciphertext,status) VALUES($1::uuid,$2::uuid,$3,$4,$5,'active')", key.ID, userID, key.Prefix, key.SecretHash, key.Ciphertext); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -212,8 +222,8 @@ func (s *Postgres) CreateVerifiedClaim(ctx context.Context, userID, recoveryHash
 	return tx.Commit()
 }
 
-func (s *Postgres) RotateKey(ctx context.Context, userID, id, prefix, hash string) error {
-	return s.RotateAPIKey(ctx, userID, NewAPIKey{ID: id, Prefix: prefix, SecretHash: hash})
+func (s *Postgres) RotateKey(ctx context.Context, userID, id, prefix, hash, ciphertext string) error {
+	return s.RotateAPIKey(ctx, userID, NewAPIKey{ID: id, Prefix: prefix, SecretHash: hash, Ciphertext: ciphertext})
 }
 func (s *Postgres) RevokeKey(ctx context.Context, userID string) error {
 	return s.RevokeAPIKey(ctx, userID)
