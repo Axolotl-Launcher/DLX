@@ -395,7 +395,7 @@ func callOneshot(endpoint string, body []byte, bearerToken, proxyURL string) (gj
 	}
 	if resp.StatusCode >= 500 && resp.StatusCode <= 599 {
 		// Do not reuse a connection that was rejected by the upstream edge.
-		oneshootClients.Delete(proxyURL)
+		oneshotClients.Delete(proxyURL)
 	}
 	return gjson.ParseBytes(raw), resp.StatusCode, nil
 }
