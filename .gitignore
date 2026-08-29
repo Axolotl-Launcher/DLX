@@ -11,3 +11,6 @@ secrets/
 # Frontend build and dependency artifacts
 sponsor-web/node_modules/
 sponsor-web/dist/
+
+# Local agent operational notes
+agent.md
