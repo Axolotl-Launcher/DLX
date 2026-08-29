@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+func TestQueryOrderAcceptsProviderListShape(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ec":200,"data":{"list":[{"out_trade_no":"order-list","user_id":"supporter-2","total_amount":"9.90","status":2}],"total_count":1}}`))
+	}))
+	defer server.Close()
+	client := &Client{UserID: "creator", Token: "token", BaseURL: server.URL}
+	order, err := client.VerifyOrder(context.Background(), "order-list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order.OutTradeNo != "order-list" || order.ActualPaidFen != 990 || order.Status != "paid" {
+		t.Fatalf("unexpected order %#v", order)
+	}
+}
+
 func TestQueryOrderUsesSignedFormAndActualAmount(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/query-order" {

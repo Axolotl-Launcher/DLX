@@ -30,6 +30,10 @@ type remoteOrder struct {
 	Status      json.RawMessage `json:"status"`
 }
 
+type orderPage struct {
+	List []remoteOrder `json:"list"`
+}
+
 func (c *Client) VerifyOrder(ctx context.Context, outTradeNo string) (VerifiedOrder, error) {
 	if strings.TrimSpace(outTradeNo) == "" || c.UserID == "" || c.Token == "" {
 		return VerifiedOrder{}, ErrUnavailable
@@ -77,6 +81,21 @@ func (c *Client) VerifyOrder(ctx context.Context, outTradeNo string) (VerifiedOr
 	var order remoteOrder
 	if err = json.Unmarshal(body.Data, &order); err != nil {
 		return VerifiedOrder{}, err
+	}
+	// Afdian's query-order endpoint returns data.list, while older compatible
+	// fixtures may return the order object directly. Accept both shapes, but
+	// select only the exact requested order from the provider response.
+	if order.OutTradeNo == "" {
+		var page orderPage
+		if err = json.Unmarshal(body.Data, &page); err != nil {
+			return VerifiedOrder{}, err
+		}
+		for _, candidate := range page.List {
+			if candidate.OutTradeNo == outTradeNo {
+				order = candidate
+				break
+			}
+		}
 	}
 	amount, err := fen(order.TotalAmount)
 	if err != nil {
