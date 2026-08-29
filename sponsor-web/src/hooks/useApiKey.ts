@@ -12,7 +12,9 @@ export function useApiKey() {
     try { setPendingKey((await api.getApiKey()).api_key) } catch { setPendingKey(null) }
   }, [])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    queueMicrotask(() => void refresh())
+  }, [refresh])
 
   const generate = useCallback(async (): Promise<boolean> => {
     setGenerating(true)
