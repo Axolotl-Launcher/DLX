@@ -393,6 +393,10 @@ func callOneshot(endpoint string, body []byte, bearerToken, proxyURL string) (gj
 	if err != nil {
 		return gjson.Result{}, resp.StatusCode, fmt.Errorf("read response body: %w", err)
 	}
+	if resp.StatusCode >= 500 && resp.StatusCode <= 599 {
+		// Do not reuse a connection that was rejected by the upstream edge.
+		oneshootClients.Delete(proxyURL)
+	}
 	return gjson.ParseBytes(raw), resp.StatusCode, nil
 }
 
@@ -458,6 +462,12 @@ func TranslateByDLX(sourceLang, targetLang, text string, tagHandling string, pro
 
 	id := time.Now().UnixMilli()
 	result, status, err := callOneshot(endpoint, bodyBytes, dlSession, proxyURL)
+	if err == nil && status >= 500 && status <= 599 {
+		// A cached HTTP/2 connection can remain attached to a temporarily
+		// unhealthy upstream edge. callOneshot evicts it on 5xx; retry once
+		// against a fresh client, but never retry 429 responses.
+		result, status, err = callOneshot(endpoint, bodyBytes, dlSession, proxyURL)
+	}
 	if err != nil {
 		// Map upstream timeouts to 504 so callers can distinguish "DeepL
 		// took too long" from other 503 failure modes (DNS, TLS, etc.).
