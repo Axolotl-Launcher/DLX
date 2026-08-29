@@ -7,7 +7,12 @@ const HEAT = ["var(--heat-0)", "var(--heat-1)", "var(--heat-2)", "var(--heat-3)"
 const WEEKDAYS = ["", "周一", "", "周三", "", "周五", ""]
 function compact(value: number) { return value >= 1000000 ? (value / 1000000).toFixed(1) + "M" : value >= 1000 ? (value / 1000).toFixed(1) + "K" : String(value) }
 function intensity(value: number, max: number) { if (!value || !max) return 0; const ratio = value / max; return ratio > .8 ? 4 : ratio > .6 ? 3 : ratio > .3 ? 2 : ratio > .08 ? 1 : 0 }
-function dayKey(date: Date) { return date.toISOString().slice(0, 10) }
+function dayKey(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
 
 export function UsageHeatmap() {
   const { data, loading } = useUsage()
