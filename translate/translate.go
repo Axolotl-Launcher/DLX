@@ -307,7 +307,8 @@ func newOneshotClient(proxyURL string) (*req.Client, error) {
 	//   - Common headers = what URLSession attaches by default
 	// Per-request headers (Authorization, x-app-*) are set in callOneshot.
 	client := req.C().
-		SetTLSFingerprintIOS().
+		// Use the standard Go TLS profile. DeepL rejects the synthetic iOS
+		// fingerprint from server-side traffic with HTTP 429.
 		SetCookieJar(sharedCookieJar()).
 		SetTimeout(oneshotTimeout).
 		SetUserAgent(iosUserAgent()).
