@@ -1,35 +1,9 @@
 import { Loader2 } from "lucide-react"
-
 import { Dashboard } from "@/components/Dashboard"
 import { GateView } from "@/components/GateView"
 import { Header } from "@/components/Header"
+import { SiteFooter } from "@/components/SiteFooter"
 import { Toaster } from "@/components/ui/sonner"
 import { useSession } from "@/hooks/useSession"
-
-export function App() {
-  const { state, login, logout } = useSession()
-
-  return (
-    <main className="min-h-svh bg-muted/30 text-foreground">
-      <Toaster richColors />
-      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
-        <Header
-          authenticated={state.status === "authenticated"}
-          onLogout={logout}
-        />
-        {state.status === "loading" && (
-          <div className="grid place-items-center py-28">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            <span className="sr-only">正在加载账户状态</span>
-          </div>
-        )}
-        {state.status === "anonymous" && (
-          <GateView meError={state.meError} onLogin={login} />
-        )}
-        {state.status === "authenticated" && <Dashboard me={state.me} />}
-      </div>
-    </main>
-  )
-}
-
+export function App(){const{state,login,logout}=useSession();return <main className="min-h-svh bg-background text-foreground"><Toaster richColors position="top-center" /><Header authenticated={state.status==="authenticated"} onLogout={logout}/><div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pt-14 lg:px-8">{state.status==="loading"?<div className="grid min-h-[55vh] place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden="true"/><span className="sr-only">正在加载</span></div>:state.status==="anonymous"?<GateView meError={state.meError} onLogin={login}/>:<Dashboard me={state.me}/>}</div><SiteFooter/></main>}
 export default App

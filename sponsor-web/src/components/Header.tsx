@@ -1,68 +1,8 @@
 import { ExternalLink, ShieldCheck } from "lucide-react"
-
 import { Button, buttonVariants } from "@/components/ui/button"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { SPONSOR_URL } from "@/lib/constants"
 import { cn } from "@/lib/utils"
-
-export interface HeaderProps {
-  authenticated: boolean
-  onLogout: () => void
-}
-
-export function Header({ authenticated, onLogout }: HeaderProps) {
-  return (
-    <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
-        <div className="grid size-10 place-items-center rounded-2xl bg-primary text-primary-foreground">
-          <ShieldCheck className="size-5" />
-        </div>
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">Axolotl</p>
-          <h1 className="text-xl font-semibold tracking-tight">赞助者中心 · Sponsor Translate</h1>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <ThemeToggle />
-        <a
-          className={cn(buttonVariants({ variant: "outline" }))}
-          href={SPONSOR_URL}
-          target="_blank"
-          rel="noreferrer"
-        >
-          去爱发电支持 <ExternalLink />
-        </a>
-        <AlertDialog>
-          <AlertDialogTrigger
-            render={<Button variant="ghost" disabled={!authenticated} />}
-          >
-            退出登录
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>退出登录？</AlertDialogTitle>
-              <AlertDialogDescription>
-                退出仅清除本机的登录界面状态；服务端会话 Cookie 会在 7 天后自动过期。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={onLogout}>确认退出</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    </header>
-  )
-}
+export interface HeaderProps { authenticated: boolean; onLogout: () => void }
+export function Header({authenticated,onLogout}:HeaderProps){return <header className="sticky top-0 z-20 border-b bg-background/80 backdrop-blur-md"><div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:gap-6 sm:px-6 lg:px-8"><div className="flex min-w-0 items-center gap-2.5"><div className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground"><ShieldCheck className="size-4" aria-hidden="true" /></div><div className="min-w-0"><span className="block truncate text-sm font-semibold tracking-tight">Axolotl Sponsor</span></div></div><div className="flex shrink-0 items-center gap-1.5 sm:gap-2"><ThemeToggle /><a className={cn(buttonVariants({variant:"outline",size:"sm"}))} href={SPONSOR_URL} target="_blank" rel="noreferrer"><span className="hidden sm:inline">爱发电支持</span><span className="sm:hidden">支持</span><ExternalLink data-icon="inline-end" /> </a>{authenticated&&<AlertDialog><AlertDialogTrigger render={<Button variant="ghost" size="sm" />}>退出</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>退出登录？</AlertDialogTitle><AlertDialogDescription>退出后需要重新输入登录码。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onLogout}>确认退出</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}</div></div></header>}
