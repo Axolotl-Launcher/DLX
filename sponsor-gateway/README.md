@@ -9,6 +9,7 @@ This directory is intentionally isolated from DLX: it owns sponsor identity, ent
 - The route checks key status and the permanent lifetime threshold (990 fen) before contacting DLX, limits bodies to 2 MiB/text to 10,000 runes, returns a non-sensitive request ID, applies a local fixed-window limit when configured, and does not log text or credentials.
 - GET /healthz, GET /readyz, and GET /v1/account are present.
 - The initial PostgreSQL schema is in migrations/001_initial.sql; it stores integer fen, one active key per user, and intentionally has no translation-body column.
+- CDK issuance/redemption schema is in migrations/004_cdk.sql. Batches and CDKs use positive integer `amount_fen`; each CDK stores only a peppered HMAC digest and has one of `active`, `redeemed`, `revoked`, or `expired` states. Redemptions append an idempotent movement to the immutable `entitlement_ledger`; plaintext CDKs are never persisted.
 
 ## Not production-ready yet
 

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -26,8 +27,18 @@ type Store interface {
 	UserStatus(userID string) (paidFen int64, status string, ok bool)
 	TouchKey(id string, at time.Time) error
 }
-type UsageDay struct { Date string `json:"date"`; RequestCount int64 `json:"request_count"`; InputChars int64 `json:"input_chars"`; ErrorCount int64 `json:"error_count"` }
-type UsageSummary struct { Days []UsageDay `json:"days"`; TotalRequestCount int64 `json:"total_request_count"`; TotalInputChars int64 `json:"total_input_chars"`; TotalErrorCount int64 `json:"total_error_count"` }
+type UsageDay struct {
+	Date         string `json:"date"`
+	RequestCount int64  `json:"request_count"`
+	InputChars   int64  `json:"input_chars"`
+	ErrorCount   int64  `json:"error_count"`
+}
+type UsageSummary struct {
+	Days              []UsageDay `json:"days"`
+	TotalRequestCount int64      `json:"total_request_count"`
+	TotalInputChars   int64      `json:"total_input_chars"`
+	TotalErrorCount   int64      `json:"total_error_count"`
+}
 type UsageRecorder interface {
 	RecordUsage(userID string, inputChars int, errorOccurred bool, at time.Time) error
 }
@@ -47,6 +58,13 @@ type KeyManager interface {
 type KeyViewer interface {
 	ActiveKeyCiphertext(ctx context.Context, userID string) (string, bool, error)
 }
+type CDKAdminStore interface {
+	CreateCDKs(ctx context.Context, amountFen int64, quantity int, note string, digests []string) (string, error)
+	ListCDKs(ctx context.Context) ([]entitlement.CDK, error)
+}
+type CDKRedeemer interface {
+	RedeemCDK(ctx context.Context, digest, userID string, at time.Time, thresholdFen int64) (entitlement.LedgerEntry, error)
+}
 type Server struct {
 	Store         Store
 	DLX           *translate.Client
@@ -59,6 +77,7 @@ type Server struct {
 	UpstreamSlots chan struct{}
 	ThresholdFen  int64
 	MaxTextChars  int
+	AdminToken    string
 }
 type errorBody struct {
 	Code      string `json:"code"`
@@ -83,6 +102,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/me/usage", s.usage)
 	mux.HandleFunc("/v1/translate", s.handleTranslate)
 	mux.HandleFunc("/v1/account", s.account)
+	mux.HandleFunc("/admin/cdks", s.adminCDKs)
+	mux.HandleFunc("/admin/overview", s.adminOverview)
+	mux.HandleFunc("/admin/users", s.adminUsers)
+	mux.HandleFunc("/admin/users/", s.adminUserPath)
+	mux.HandleFunc("/admin/orders", s.adminOrders)
+	mux.HandleFunc("/cdk/redeem", s.redeemCDK)
 	return sponsorCORS(mux)
 }
 
@@ -95,7 +120,7 @@ func sponsorCORS(next http.Handler) http.Handler {
 		}
 		if r.Method == http.MethodOptions {
 			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -133,10 +158,25 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet { writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", ""); return }
-	userID, ok := s.sessionUser(r); if !ok { writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "login required", ""); return }
-	reader, ok := s.Store.(UsageReader); if !ok { writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", ""); return }
-	result, err := reader.UsageSummary(userID, time.Now().UTC().AddDate(0, 0, -364)); if err != nil { writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", ""); return }
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", "")
+		return
+	}
+	userID, ok := s.sessionUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "login required", "")
+		return
+	}
+	reader, ok := s.Store.(UsageReader)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", "")
+		return
+	}
+	result, err := reader.UsageSummary(userID, time.Now().UTC().AddDate(0, 0, -364))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "usage service unavailable", "")
+		return
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -154,12 +194,24 @@ func (s *Server) apiKey(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		viewer, ok := s.Store.(KeyViewer)
-		if !ok { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
+		if !ok {
+			writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", "")
+			return
+		}
 		ciphertext, found, err := viewer.ActiveKeyCiphertext(r.Context(), userID)
-		if err != nil { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
-		if !found { writeError(w, 404, "KEY_NOT_FOUND", "no active API key", ""); return }
+		if err != nil {
+			writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", "")
+			return
+		}
+		if !found {
+			writeError(w, 404, "KEY_NOT_FOUND", "no active API key", "")
+			return
+		}
 		key, err := s.Hasher.Open(ciphertext)
-		if err != nil { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
+		if err != nil {
+			writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", "")
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"api_key": key, "message": "active"})
 	case http.MethodPost:
 		id, err := auth.NewID()
@@ -173,7 +225,10 @@ func (s *Server) apiKey(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ciphertext, err := s.Hasher.Seal(key)
-		if err != nil { writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", ""); return }
+		if err != nil {
+			writeError(w, 503, "SERVICE_UNAVAILABLE", "key service unavailable", "")
+			return
+		}
 		if err = manager.RotateKey(r.Context(), userID, id, "axl_live_"+id, digest, ciphertext); err != nil {
 			writeError(w, 403, "SPONSORSHIP_REQUIRED", "permanent sponsorship is required", "")
 			return
@@ -207,7 +262,7 @@ func (s *Server) claimOrder(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		OrderNo string `json:"order_no"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&request); err != nil || strings.TrimSpace(request.OrderNo) == "" {
+	if err := decodeJSON(w, r, 16<<10, &request); err != nil || strings.TrimSpace(request.OrderNo) == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_ORDER", "invalid order number", "")
 		return
 	}
@@ -250,8 +305,7 @@ func (s *Server) recoveryLogin(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		LoginCode string `json:"login_code"`
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
-	if err := decoder.Decode(&request); err != nil {
+	if err := decodeJSON(w, r, 16<<10, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_LOGIN_CODE", "invalid login code", "")
 		return
 	}
@@ -308,8 +362,7 @@ func (s *Server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload translate.Request
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
-	if err := decoder.Decode(&payload); err != nil || strings.TrimSpace(payload.Text) == "" || payload.TargetLang == "" {
+	if err := decodeJSON(w, r, 2<<20, &payload); err != nil || strings.TrimSpace(payload.Text) == "" || payload.TargetLang == "" {
 		writeError(w, 400, "INVALID_REQUEST", "invalid request payload", requestID)
 		return
 	}
@@ -380,6 +433,20 @@ func (s *Server) threshold() int64 {
 		return entitlement.DefaultThresholdFen
 	}
 	return s.ThresholdFen
+}
+func decodeJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, target any) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes))
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("multiple JSON values")
+		}
+		return err
+	}
+	return nil
 }
 func writeUpstreamError(w http.ResponseWriter, err error, requestID string) {
 	var upstream *translate.UpstreamError

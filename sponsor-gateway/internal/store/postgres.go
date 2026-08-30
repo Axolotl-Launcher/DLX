@@ -10,6 +10,8 @@ import (
 
 	"github.com/OwO-Network/DLX/sponsor-gateway/internal/afdian"
 	"github.com/OwO-Network/DLX/sponsor-gateway/internal/api"
+	"github.com/OwO-Network/DLX/sponsor-gateway/internal/auth"
+	"github.com/OwO-Network/DLX/sponsor-gateway/internal/entitlement"
 )
 
 type Postgres struct {
@@ -47,9 +49,15 @@ func (s *Postgres) UserStatus(userID string) (int64, string, bool) {
 func (s *Postgres) ActiveKeyCiphertext(ctx context.Context, userID string) (string, bool, error) {
 	var ciphertext sql.NullString
 	err := s.db.QueryRowContext(ctx, `SELECT secret_ciphertext FROM api_keys WHERE user_id=$1::uuid AND status='active'`, userID).Scan(&ciphertext)
-	if err == sql.ErrNoRows { return "", false, nil }
-	if err != nil { return "", false, err }
-	if !ciphertext.Valid || ciphertext.String == "" { return "", false, nil }
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !ciphertext.Valid || ciphertext.String == "" {
+		return "", false, nil
+	}
 	return ciphertext.String, true, nil
 }
 
@@ -63,10 +71,26 @@ func (s *Postgres) TouchKey(id string, at time.Time) error {
 // RecordUsage atomically aggregates metadata only. It intentionally takes no
 // translation body or credential so such material cannot reach usage_daily.
 func (s *Postgres) UsageSummary(userID string, since time.Time) (api.UsageSummary, error) {
-	ctx, cancel := s.context(); defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT d::date, COALESCE(u.request_count,0), COALESCE(u.input_chars,0), COALESCE(u.error_count,0) FROM generate_series($2::date, CURRENT_DATE, interval '1 day') d LEFT JOIN usage_daily u ON u.user_id=$1::uuid AND u.date=d::date ORDER BY d`, userID, since.UTC().Format("2006-01-02")); if err != nil { return api.UsageSummary{}, err }; defer rows.Close()
-	result:=api.UsageSummary{Days:make([]api.UsageDay,0,365)}
-	for rows.Next(){var day api.UsageDay;var date time.Time;if err:=rows.Scan(&date,&day.RequestCount,&day.InputChars,&day.ErrorCount);err!=nil{return api.UsageSummary{},err};day.Date=date.Format("2006-01-02");result.Days=append(result.Days,day);result.TotalRequestCount+=day.RequestCount;result.TotalInputChars+=day.InputChars;result.TotalErrorCount+=day.ErrorCount}
+	ctx, cancel := s.context()
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `SELECT d::date, COALESCE(u.request_count,0), COALESCE(u.input_chars,0), COALESCE(u.error_count,0) FROM generate_series($2::date, CURRENT_DATE, interval '1 day') d LEFT JOIN usage_daily u ON u.user_id=$1::uuid AND u.date=d::date ORDER BY d`, userID, since.UTC().Format("2006-01-02"))
+	if err != nil {
+		return api.UsageSummary{}, err
+	}
+	defer rows.Close()
+	result := api.UsageSummary{Days: make([]api.UsageDay, 0, 365)}
+	for rows.Next() {
+		var day api.UsageDay
+		var date time.Time
+		if err := rows.Scan(&date, &day.RequestCount, &day.InputChars, &day.ErrorCount); err != nil {
+			return api.UsageSummary{}, err
+		}
+		day.Date = date.Format("2006-01-02")
+		result.Days = append(result.Days, day)
+		result.TotalRequestCount += day.RequestCount
+		result.TotalInputChars += day.InputChars
+		result.TotalErrorCount += day.ErrorCount
+	}
 	return result, rows.Err()
 }
 
@@ -95,7 +119,7 @@ func (s *Postgres) RecalculateEntitlement(ctx context.Context, userID string, th
 	}
 	defer tx.Rollback()
 	var paid int64
-	err = tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN o.status IN ('paid','success') THEN o.actual_paid_fen ELSE 0 END),0) FROM afdian_orders o JOIN afdian_identities i ON i.afdian_user_id=o.afdian_user_id WHERE i.user_id=$1::uuid", userID).Scan(&paid)
+	err = tx.QueryRowContext(ctx, "SELECT COALESCE((SELECT SUM(CASE WHEN o.status IN ('paid','success') THEN o.actual_paid_fen ELSE 0 END) FROM afdian_orders o JOIN afdian_identities i ON i.afdian_user_id=o.afdian_user_id WHERE i.user_id=$1::uuid),0) + COALESCE((SELECT SUM(l.amount_fen) FROM entitlement_ledger l WHERE l.user_id=$1::uuid),0)", userID).Scan(&paid)
 	if err != nil {
 		return Entitlement{}, err
 	}
@@ -203,6 +227,9 @@ func (s *Postgres) CreateVerifiedClaim(ctx context.Context, userID, recoveryHash
 		return err
 	}
 	defer tx.Rollback()
+	if order.ActualPaidFen < 0 || (order.Status != "paid" && order.Status != "success") {
+		return errors.New("order is not eligible")
+	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO users(id,status,login_code_hash) VALUES($1::uuid,'active',$2)", userID, recoveryHash); err != nil {
 		return err
 	}
@@ -213,10 +240,14 @@ func (s *Postgres) CreateVerifiedClaim(ctx context.Context, userID, recoveryHash
 		return err
 	}
 	status := "pending"
-	if order.ActualPaidFen >= thresholdFen {
+	initialPaidFen := int64(0)
+	if order.Status == "paid" || order.Status == "success" {
+		initialPaidFen = order.ActualPaidFen
+	}
+	if initialPaidFen >= thresholdFen {
 		status = "granted"
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO entitlements(user_id,lifetime_paid_fen,status,granted_at,recalculated_at) VALUES($1::uuid,$2,$3,CASE WHEN $3='granted' THEN now() ELSE NULL END,now())", userID, order.ActualPaidFen, status); err != nil {
+	if _, err = tx.ExecContext(ctx, "INSERT INTO entitlements(user_id,lifetime_paid_fen,status,granted_at,recalculated_at) VALUES($1::uuid,$2,$3,CASE WHEN $3='granted' THEN now() ELSE NULL END,now())", userID, initialPaidFen, status); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -238,6 +269,98 @@ func (s *Postgres) BeginWebhookEvent(ctx context.Context, eventKey, payload stri
 	}
 	n, err := result.RowsAffected()
 	return n == 1, err
+}
+
+func (s *Postgres) CreateCDKs(ctx context.Context, amountFen int64, quantity int, note string, digests []string) (string, error) {
+	if quantity <= 0 || len(digests) != quantity || amountFen <= 0 {
+		return "", errors.New("invalid CDK batch")
+	}
+	batchID, err := auth.NewID()
+	if err != nil {
+		return "", err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "INSERT INTO cdk_batches(id,name,amount_fen,quantity) VALUES($1::uuid,$2,$3,$4)", batchID, note, amountFen, quantity); err != nil {
+		return "", err
+	}
+	for _, digest := range digests {
+		id, e := auth.NewID()
+		if e != nil {
+			return "", e
+		}
+		if _, err = tx.ExecContext(ctx, "INSERT INTO cdks(id,batch_id,digest,amount_fen) VALUES($1::uuid,$2::uuid,$3,$4)", id, batchID, digest, amountFen); err != nil {
+			return "", err
+		}
+	}
+	return batchID, tx.Commit()
+}
+func (s *Postgres) ListCDKs(ctx context.Context) ([]entitlement.CDK, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id::text,batch_id::text,amount_fen,status,COALESCE(redeemed_by::text,''),redeemed_at FROM cdks ORDER BY created_at,id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]entitlement.CDK, 0)
+	for rows.Next() {
+		var x entitlement.CDK
+		var at sql.NullTime
+		var st string
+		if err = rows.Scan(&x.ID, &x.BatchID, &x.AmountFen, &st, &x.RedeemedBy, &at); err != nil {
+			return nil, err
+		}
+		x.Status = entitlement.CDKStatus(st)
+		if at.Valid {
+			x.RedeemedAt = &at.Time
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+func (s *Postgres) RedeemCDK(ctx context.Context, digest, userID string, at time.Time, thresholdFen int64) (entitlement.LedgerEntry, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return entitlement.LedgerEntry{}, err
+	}
+	defer tx.Rollback()
+	var id, st string
+	var amount int64
+	var exp sql.NullTime
+	err = tx.QueryRowContext(ctx, "SELECT c.id::text,c.amount_fen,c.status,b.expires_at FROM cdks c JOIN cdk_batches b ON b.id=c.batch_id WHERE c.digest=$1 FOR UPDATE", digest).Scan(&id, &amount, &st, &exp)
+	if err == sql.ErrNoRows {
+		return entitlement.LedgerEntry{}, entitlement.ErrCDKNotFound
+	}
+	if err != nil {
+		return entitlement.LedgerEntry{}, err
+	}
+	if st != "active" {
+		return entitlement.LedgerEntry{}, entitlement.ErrCDKUsed
+	}
+	if exp.Valid && !exp.Time.After(at) {
+		if _, err = tx.ExecContext(ctx, "UPDATE cdks SET status='expired' WHERE id=$1::uuid", id); err != nil {
+			return entitlement.LedgerEntry{}, err
+		}
+		if err = tx.Commit(); err != nil {
+			return entitlement.LedgerEntry{}, err
+		}
+		return entitlement.LedgerEntry{}, entitlement.ErrCDKUsed
+	}
+	if _, err = tx.ExecContext(ctx, "UPDATE cdks SET status='redeemed',redeemed_by=$2::uuid,redeemed_at=$3 WHERE id=$1::uuid", id, userID, at); err != nil {
+		return entitlement.LedgerEntry{}, err
+	}
+	var e entitlement.LedgerEntry
+	err = tx.QueryRowContext(ctx, "INSERT INTO entitlement_ledger(user_id,amount_fen,source_type,source_id,idempotency_key) VALUES($1::uuid,$2,'cdk',$3,$4) RETURNING id,user_id::text,amount_fen,source_type,source_id,idempotency_key,created_at", userID, amount, id, "cdk:"+id).Scan(&e.ID, &e.UserID, &e.AmountFen, &e.SourceType, &e.SourceID, &e.IdempotencyKey, &e.CreatedAt)
+	if err != nil {
+		return e, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO entitlements(user_id,lifetime_paid_fen,status,granted_at,recalculated_at) VALUES($1::uuid,$2,CASE WHEN $2 >= $3 THEN 'granted' ELSE 'pending' END,CASE WHEN $2 >= $3 THEN now() ELSE NULL END,now()) ON CONFLICT(user_id) DO UPDATE SET lifetime_paid_fen=entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen,status=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3 THEN 'granted' ELSE entitlements.status END,granted_at=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3 THEN COALESCE(entitlements.granted_at,now()) ELSE entitlements.granted_at END,recalculated_at=now()", userID, amount, thresholdFen); err != nil {
+		return e, err
+	}
+	err = tx.Commit()
+	return e, err
 }
 func (s *Postgres) CompleteWebhookEvent(ctx context.Context, eventKey, result string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE webhook_events SET processed_at=now(),result=$2 WHERE provider_event_key=$1", eventKey, result)

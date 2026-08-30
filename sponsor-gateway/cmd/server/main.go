@@ -84,7 +84,7 @@ func main() {
 	limiter := usage.NewRedisFixedWindow(redisClient, 60, time.Minute)
 	dlxClient := &translate.Client{BaseURL: dlxURL, InternalToken: requiredEnv("DLX_INTERNAL_TOKEN")}
 	afdianClient := &afdian.Client{UserID: requiredEnv("AFDIAN_USER_ID"), Token: requiredEnv("AFDIAN_TOKEN")}
-	server := &api.Server{Store: repository, Hasher: hasher, Sessions: sessions, Afdian: afdianClient, CookieDomain: os.Getenv("SESSION_COOKIE_DOMAIN"), DLX: dlxClient, Limiter: limiter, UpstreamSlots: make(chan struct{}, 32), MaxTextChars: 10000, ReadyCheck: func(ctx context.Context) error {
+	server := &api.Server{Store: repository, Hasher: hasher, Sessions: sessions, AdminToken: requiredEnv("ADMIN_TOKEN"), Afdian: afdianClient, CookieDomain: os.Getenv("SESSION_COOKIE_DOMAIN"), DLX: dlxClient, Limiter: limiter, UpstreamSlots: make(chan struct{}, 32), MaxTextChars: 10000, ReadyCheck: func(ctx context.Context) error {
 		if err := repository.Ping(ctx); err != nil {
 			return err
 		}

@@ -27,9 +27,10 @@ services:
       SESSION_COOKIE_DOMAIN: .axlmc.org
       AFDIAN_USER_ID_FILE: /run/secrets/afdian_user_id
       AFDIAN_TOKEN_FILE: /run/secrets/afdian_token
+      ADMIN_TOKEN_FILE: /run/secrets/admin_token
       DATABASE_URL_FILE: /run/secrets/database_url
       REDIS_ADDR: redis:6379
-    secrets: [dlx_internal_token, api_key_pepper, session_secret, afdian_user_id, afdian_token, database_url]
+    secrets: [dlx_internal_token, api_key_pepper, session_secret, afdian_user_id, afdian_token, database_url, admin_token]
     expose: ["8080"]
     healthcheck: { test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/readyz"], interval: 30s, timeout: 3s, retries: 3 }
     depends_on:
@@ -68,3 +69,4 @@ secrets:
   afdian_user_id: { file: ./secrets/afdian_user_id }
   afdian_token: { file: ./secrets/afdian_token }
   database_url: { file: ./secrets/database_url }
+  admin_token: { file: ./secrets/admin_token }
