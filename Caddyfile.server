@@ -9,6 +9,20 @@ api.axlmc.org {
     reverse_proxy 127.0.0.1:8080
 }
 
+# Direct origin for server-to-server admin calls (no Cloudflare proxy in front).
+# DNS record must be DNS-only (grey cloud). Caddy issues a Let's Encrypt cert
+# automatically on first request.
+gateway-direct.axlmc.org {
+    encode gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+    }
+    reverse_proxy 127.0.0.1:8080
+}
+
 sponsor.axlmc.org {
     encode gzip
     header {
