@@ -354,7 +354,7 @@ func redeemCDKTx(ctx context.Context, tx *sql.Tx, digest, userID string, at time
 	if err != nil {
 		return e, err
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO entitlements(user_id,lifetime_paid_fen,status,granted_at,recalculated_at) VALUES($1::uuid,$2,CASE WHEN $2 >= $3 THEN 'granted' ELSE 'pending' END,CASE WHEN $2 >= $3 THEN now() ELSE NULL END,now()) ON CONFLICT(user_id) DO UPDATE SET lifetime_paid_fen=entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen,status=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3 THEN 'granted' ELSE entitlements.status END,granted_at=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3 THEN COALESCE(entitlements.granted_at,now()) ELSE entitlements.granted_at END,recalculated_at=now()", userID, amount, thresholdFen); err != nil {
+	if _, err = tx.ExecContext(ctx, "INSERT INTO entitlements(user_id,lifetime_paid_fen,status,granted_at,recalculated_at) VALUES($1::uuid,$2::bigint,CASE WHEN $2::bigint >= $3::bigint THEN 'granted' ELSE 'pending' END,CASE WHEN $2::bigint >= $3::bigint THEN now() ELSE NULL END,now()) ON CONFLICT(user_id) DO UPDATE SET lifetime_paid_fen=entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen,status=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3::bigint THEN 'granted' ELSE entitlements.status END,granted_at=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3::bigint THEN COALESCE(entitlements.granted_at,now()) ELSE entitlements.granted_at END,recalculated_at=now()", userID, amount, thresholdFen); err != nil {
 		return e, err
 	}
 	return e, nil
