@@ -383,7 +383,9 @@ func (s *Postgres) RedeemCDK(ctx context.Context, digest, userID string, at time
 func (s *Postgres) ClaimCDK(ctx context.Context, cdkDigest, userID, recoveryHash string, at time.Time, thresholdFen int64) (entitlement.Fen, error) {
 	var st string
 	var exp sql.NullTime
-	err := s.db.QueryRowContext(ctx, `SELECT status, expires_at FROM cdks WHERE digest=$1`, cdkDigest).Scan(&st, &exp)
+	// expires_at lives on cdk_batches, not cdks: the pre-check must join the
+	// batch exactly like the guarded transaction query below.
+	err := s.db.QueryRowContext(ctx, `SELECT c.status, b.expires_at FROM cdks c JOIN cdk_batches b ON b.id=c.batch_id WHERE c.digest=$1`, cdkDigest).Scan(&st, &exp)
 	if err == sql.ErrNoRows {
 		return 0, entitlement.ErrCDKNotFound
 	}
