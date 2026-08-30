@@ -11,7 +11,7 @@ import (
 )
 
 type adminAPIKeysStore struct {
-	fakeStore
+	adminHTTPStore
 	Page     AdminAPIKeyPage
 	Captured AdminAPIKeyQuery
 }

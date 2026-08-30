@@ -49,7 +49,7 @@ export function CdkClaimPanel({ onLogin }: CdkClaimPanelProps) {
     <Card className="h-full transition-shadow duration-300 hover:shadow-md">
       <CardHeader>
         <CardTitle>CDK 兑换</CardTitle>
-        <CardDescription>输入 CDK 兑换，金额计入累计支持并直接生成登录码。</CardDescription>
+        <CardDescription>输入 CDK 兑换</CardDescription>
       </CardHeader>
       <form className="flex flex-1 flex-col" onSubmit={submit}>
         <CardContent className="flex-1">
