@@ -56,5 +56,15 @@ export function useSession() {
     setState({ status: "anonymous", meError: false })
   }, [])
 
-  return { state, login, logout }
+  const refresh = useCallback(async (): Promise<boolean> => {
+    try {
+      const me = await api.me()
+      setState({ status: "authenticated", me })
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
+  return { state, login, logout, refresh }
 }

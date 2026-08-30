@@ -27,6 +27,9 @@ func (adminHTTPStore) AdminUserUsage(context.Context, string, UsageQuery) (Usage
 func (adminHTTPStore) ListAdminOrders(_ context.Context, _ string, q AdminOrderQuery) (AdminOrderPage, error) {
 	return AdminOrderPage{Items: []AdminOrder{}, Page: q.Page, PageSize: q.PageSize}, nil
 }
+func (adminHTTPStore) ListAdminAPIKeys(_ context.Context, q AdminAPIKeyQuery) (AdminAPIKeyPage, error) {
+	return AdminAPIKeyPage{Items: []AdminAPIKeyRecord{}, Page: q.Page, PageSize: q.PageSize}, nil
+}
 
 func TestAdminOverviewRequiresToken(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/admin/overview", nil)

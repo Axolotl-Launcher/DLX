@@ -107,6 +107,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/users", s.adminUsers)
 	mux.HandleFunc("/admin/users/", s.adminUserPath)
 	mux.HandleFunc("/admin/orders", s.adminOrders)
+	mux.HandleFunc("/admin/api-keys", s.adminAPIKeys)
 	mux.HandleFunc("/cdk/redeem", s.redeemCDK)
 	return sponsorCORS(mux)
 }

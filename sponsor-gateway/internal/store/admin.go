@@ -221,4 +221,45 @@ func (s *Postgres) ListAdminOrders(ctx context.Context, userID string, q api.Adm
 	return result, rows.Err()
 }
 
+func (s *Postgres) ListAdminAPIKeys(ctx context.Context, q api.AdminAPIKeyQuery) (api.AdminAPIKeyPage, error) {
+	result := api.AdminAPIKeyPage{Page: q.Page, PageSize: q.PageSize, Items: make([]api.AdminAPIKeyRecord, 0)}
+	where := []string{"1=1"}
+	args := make([]any, 0, 3)
+	if q.Status != "" {
+		args = append(args, q.Status)
+		where = append(where, "k.status=$"+fmt.Sprint(len(args)))
+	}
+	if q.Q != "" {
+		args = append(args, "%"+strings.ToLower(q.Q)+"%")
+		where = append(where, "LOWER(u.email) LIKE $"+fmt.Sprint(len(args)))
+	}
+	filter := strings.Join(where, " AND ")
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_keys k JOIN users u ON u.id=k.user_id WHERE `+filter, args...).Scan(&result.Total); err != nil {
+		return result, err
+	}
+	dataArgs := append([]any{}, args...)
+	limitPos := len(dataArgs) + 1
+	offsetPos := limitPos + 1
+	dataArgs = append(dataArgs, q.PageSize, (q.Page-1)*q.PageSize)
+	rows, err := s.db.QueryContext(ctx, `SELECT k.id::text,u.id::text,u.email,k.status,k.created_at,k.last_used_at FROM api_keys k JOIN users u ON u.id=k.user_id WHERE `+filter+` ORDER BY k.created_at DESC,k.id DESC LIMIT $`+fmt.Sprint(limitPos)+` OFFSET $`+fmt.Sprint(offsetPos), dataArgs...)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var record api.AdminAPIKeyRecord
+		var email sql.NullString
+		var lastUsedAt sql.NullTime
+		if err := rows.Scan(&record.ID, &record.UserID, &email, &record.Status, &record.CreatedAt, &lastUsedAt); err != nil {
+			return result, err
+		}
+		record.UserEmail = maskAdminEmail(email)
+		if lastUsedAt.Valid {
+			record.LastUsedAt = &lastUsedAt.Time
+		}
+		result.Items = append(result.Items, record)
+	}
+	return result, rows.Err()
+}
+
 var _ api.AdminStore = (*Postgres)(nil)

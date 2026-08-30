@@ -16,6 +16,7 @@ type AdminStore interface {
 	GetAdminUser(context.Context, string) (AdminUserDetail, error)
 	AdminUserUsage(context.Context, string, UsageQuery) (UsageSummary, error)
 	ListAdminOrders(context.Context, string, AdminOrderQuery) (AdminOrderPage, error)
+	ListAdminAPIKeys(context.Context, AdminAPIKeyQuery) (AdminAPIKeyPage, error)
 }
 
 type AdminOverview struct {
@@ -100,6 +101,29 @@ type AdminOrderPage struct {
 	Page     int          `json:"page"`
 	PageSize int          `json:"page_size"`
 	Total    int64        `json:"total"`
+}
+
+// AdminAPIKeyRecord is the redacted admin view of a user API key. It never
+// carries the prefix, secret hash, ciphertext, or any recoverable fragment.
+type AdminAPIKeyRecord struct {
+	ID         string     `json:"id"`
+	UserID     string     `json:"user_id"`
+	UserEmail  *string    `json:"user_email"`
+	Status     string     `json:"status"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+type AdminAPIKeyQuery struct {
+	Page, PageSize int
+	Status, Q      string
+}
+
+type AdminAPIKeyPage struct {
+	Items    []AdminAPIKeyRecord `json:"items"`
+	Page     int                 `json:"page"`
+	PageSize int                 `json:"page_size"`
+	Total    int64               `json:"total"`
 }
 
 var ErrAdminUserNotFound = errors.New("admin user not found")
