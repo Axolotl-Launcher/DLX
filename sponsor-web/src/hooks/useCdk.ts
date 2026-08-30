@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
-import { api, errorMessage } from "@/lib/api"
+import { api, ApiError, errorMessage } from "@/lib/api"
 import type { CdkRedeemResponse } from "@/lib/types"
+
+const PENDING_CDK_KEY = "axl_pending_cdk"
 
 export function useCdk(onRedeemed?: (result: CdkRedeemResponse) => void) {
   const [redeeming, setRedeeming] = useState(false)
@@ -23,7 +25,13 @@ export function useCdk(onRedeemed?: (result: CdkRedeemResponse) => void) {
         onRedeemed?.(result)
         return true
       } catch (error) {
-        toast.error(errorMessage(error))
+        if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
+          // CDK 兑换需要登录：保留输入，登录后可直接继续。
+          sessionStorage.setItem(PENDING_CDK_KEY, cdk)
+          toast.error("兑换 CDK 需要先登录，登录后可直接继续兑换")
+        } else {
+          toast.error(errorMessage(error))
+        }
         return false
       } finally {
         setRedeeming(false)
