@@ -9,24 +9,16 @@ import { useCdk } from "@/hooks/useCdk"
 import { formatYuan } from "@/lib/format"
 import type { CdkRedeemResponse } from "@/lib/types"
 
-const PENDING_CDK_KEY = "axl_pending_cdk"
-
 export interface CdkRedeemPanelProps {
   onRedeemed?: (result: CdkRedeemResponse) => void
 }
 
 export function CdkRedeemPanel({ onRedeemed }: CdkRedeemPanelProps) {
-  const [code, setCode] = useState(() => sessionStorage.getItem(PENDING_CDK_KEY) ?? "")
+  const [code, setCode] = useState("")
   const { redeeming, lastResult, redeem } = useCdk(onRedeemed)
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!code.trim()) {
-      return
-    }
-    if (await redeem(code)) {
-      sessionStorage.removeItem(PENDING_CDK_KEY)
-      setCode("")
-    }
+    if (await redeem(code)) setCode("")
   }
   return (
     <Card className="h-full animate-fade-in-up">

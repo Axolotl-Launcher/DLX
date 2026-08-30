@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OwO-Network/DLX/sponsor-gateway/internal/auth"
 	"github.com/OwO-Network/DLX/sponsor-gateway/internal/entitlement"
 )
 
@@ -135,4 +136,50 @@ func (s *Server) redeemCDK(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"amount_fen": entry.AmountFen, "status": "redeemed"})
+}
+
+// cdkClaim lets an anonymous visitor redeem a CDK exactly like an order claim:
+// it creates the recovery-code account, credits the CDK amount, and returns a
+// one-time login code shown only here.
+func (s *Server) cdkClaim(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", "")
+		return
+	}
+	if s.Hasher == nil || s.Store == nil {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "CDK service unavailable", "")
+		return
+	}
+	claimer, ok := s.Store.(CDKClaimer)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "CDK service unavailable", "")
+		return
+	}
+	var req struct {
+		CDK string `json:"cdk"`
+	}
+	if err := decodeJSON(w, r, 16<<10, &req); err != nil || strings.TrimSpace(req.CDK) == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_CDK", "invalid CDK", "")
+		return
+	}
+	userID, err := auth.NewID()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "CDK claim unavailable", "")
+		return
+	}
+	code, digest, err := auth.NewRecoveryCode(s.Hasher)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "CDK claim unavailable", "")
+		return
+	}
+	amount, err := claimer.ClaimCDK(r.Context(), s.Hasher.Hash(strings.TrimSpace(req.CDK)), userID, digest, time.Now().UTC(), s.threshold())
+	if err != nil {
+		if errors.Is(err, entitlement.ErrCDKNotFound) || errors.Is(err, entitlement.ErrCDKUsed) {
+			writeError(w, http.StatusConflict, "CDK_UNAVAILABLE", "CDK is unavailable", "")
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "CDK claim failed", "")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"login_code": code, "amount_fen": amount, "message": "Copy and store this login code now; it will not be shown again."})
 }

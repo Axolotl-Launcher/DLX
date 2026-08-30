@@ -6,4 +6,5 @@ export interface ClaimResponse { login_code:string; message:string }
 export interface LoginResponse { status:string }
 export interface ApiKeyResponse { api_key:string; message:string; created_at?:string; last_used_at?:string | null }
 export interface CdkRedeemResponse { amount_fen:number; status:string }
+export interface CdkClaimResponse { login_code:string; amount_fen:number; message:string }
 export interface ApiErrorBody { code:string; message:string; request_id?:string }

@@ -65,6 +65,9 @@ type CDKAdminStore interface {
 type CDKRedeemer interface {
 	RedeemCDK(ctx context.Context, digest, userID string, at time.Time, thresholdFen int64) (entitlement.LedgerEntry, error)
 }
+type CDKClaimer interface {
+	ClaimCDK(ctx context.Context, cdkDigest, userID, recoveryHash string, at time.Time, thresholdFen int64) (entitlement.Fen, error)
+}
 type Server struct {
 	Store         Store
 	DLX           *translate.Client
@@ -109,6 +112,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/admin/orders", s.adminOrders)
 	mux.HandleFunc("/admin/api-keys", s.adminAPIKeys)
 	mux.HandleFunc("/cdk/redeem", s.redeemCDK)
+	mux.HandleFunc("/cdk/claim", s.cdkClaim)
 	return sponsorCORS(mux)
 }
 

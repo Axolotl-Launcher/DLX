@@ -320,16 +320,14 @@ func (s *Postgres) ListCDKs(ctx context.Context) ([]entitlement.CDK, error) {
 	}
 	return out, rows.Err()
 }
-func (s *Postgres) RedeemCDK(ctx context.Context, digest, userID string, at time.Time, thresholdFen int64) (entitlement.LedgerEntry, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return entitlement.LedgerEntry{}, err
-	}
-	defer tx.Rollback()
+// redeemCDKTx performs the CDK state transition, ledger write, and entitlement
+// update inside an already-open transaction. Returns ErrCDKNotFound or
+// ErrCDKUsed when the code cannot be redeemed.
+func redeemCDKTx(ctx context.Context, tx *sql.Tx, digest, userID string, at time.Time, thresholdFen int64) (entitlement.LedgerEntry, error) {
 	var id, st string
 	var amount int64
 	var exp sql.NullTime
-	err = tx.QueryRowContext(ctx, "SELECT c.id::text,c.amount_fen,c.status,b.expires_at FROM cdks c JOIN cdk_batches b ON b.id=c.batch_id WHERE c.digest=$1 FOR UPDATE", digest).Scan(&id, &amount, &st, &exp)
+	err := tx.QueryRowContext(ctx, "SELECT c.id::text,c.amount_fen,c.status,b.expires_at FROM cdks c JOIN cdk_batches b ON b.id=c.batch_id WHERE c.digest=$1 FOR UPDATE", digest).Scan(&id, &amount, &st, &exp)
 	if err == sql.ErrNoRows {
 		return entitlement.LedgerEntry{}, entitlement.ErrCDKNotFound
 	}
@@ -359,8 +357,61 @@ func (s *Postgres) RedeemCDK(ctx context.Context, digest, userID string, at time
 	if _, err = tx.ExecContext(ctx, "INSERT INTO entitlements(user_id,lifetime_paid_fen,status,granted_at,recalculated_at) VALUES($1::uuid,$2,CASE WHEN $2 >= $3 THEN 'granted' ELSE 'pending' END,CASE WHEN $2 >= $3 THEN now() ELSE NULL END,now()) ON CONFLICT(user_id) DO UPDATE SET lifetime_paid_fen=entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen,status=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3 THEN 'granted' ELSE entitlements.status END,granted_at=CASE WHEN entitlements.lifetime_paid_fen+EXCLUDED.lifetime_paid_fen >= $3 THEN COALESCE(entitlements.granted_at,now()) ELSE entitlements.granted_at END,recalculated_at=now()", userID, amount, thresholdFen); err != nil {
 		return e, err
 	}
-	err = tx.Commit()
-	return e, err
+	return e, nil
+}
+
+// RedeemCDK credits an existing (session-authenticated) user at the CDK amount.
+func (s *Postgres) RedeemCDK(ctx context.Context, digest, userID string, at time.Time, thresholdFen int64) (entitlement.LedgerEntry, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return entitlement.LedgerEntry{}, err
+	}
+	defer tx.Rollback()
+	entry, err := redeemCDKTx(ctx, tx, digest, userID, at, thresholdFen)
+	if err != nil {
+		return entitlement.LedgerEntry{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return entitlement.LedgerEntry{}, err
+	}
+	return entry, nil
+}
+
+// ClaimCDK atomically creates the recovery-code account and credits it with the
+// CDK amount, mirroring the verified-order claim flow. The advisory pre-check
+// prevents a used or expired code from ever creating a user row.
+func (s *Postgres) ClaimCDK(ctx context.Context, cdkDigest, userID, recoveryHash string, at time.Time, thresholdFen int64) (entitlement.Fen, error) {
+	var st string
+	var exp sql.NullTime
+	err := s.db.QueryRowContext(ctx, `SELECT status, expires_at FROM cdks WHERE digest=$1`, cdkDigest).Scan(&st, &exp)
+	if err == sql.ErrNoRows {
+		return 0, entitlement.ErrCDKNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if st != "active" {
+		return 0, entitlement.ErrCDKUsed
+	}
+	if exp.Valid && !exp.Time.After(at) {
+		return 0, entitlement.ErrCDKUsed
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "INSERT INTO users(id,status,login_code_hash) VALUES($1::uuid,'active',$2)", userID, recoveryHash); err != nil {
+		return 0, err
+	}
+	entry, err := redeemCDKTx(ctx, tx, cdkDigest, userID, at, thresholdFen)
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return entry.AmountFen, nil
 }
 func (s *Postgres) CompleteWebhookEvent(ctx context.Context, eventKey, result string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE webhook_events SET processed_at=now(),result=$2 WHERE provider_event_key=$1", eventKey, result)
